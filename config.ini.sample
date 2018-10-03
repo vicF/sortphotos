@@ -1,0 +1,9 @@
+source=/Volumes/photo_to_sort
+target=/Volumes/photo_sorted
+template=Y/Y-m-d
+
+extensions = jpg jpeg gif tiff bmp png flv ogg avi mov wmv mp4 m4p mpg mpeg mpv m4v 3gp f4v
+
+log = log.txt
+
+process_with_no_date = 0
