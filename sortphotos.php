@@ -3,6 +3,8 @@
 $conf = parse_ini_file('config.ini');
 $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($conf['source']));
 
+$targetBase = rtrim(trim($conf['target']), '/') . '/';
+
 $log = @$conf['log'] ?: 'log.txt';
 
 $it->rewind();
@@ -28,19 +30,7 @@ while ($it->valid()) {
             continue;
         }
         $fullPath = rtrim($conf['source'], '/') . '/' . $subPath;
-        /*$mime = mime_content_type($fullPath);
-        switch ($mime) {
-            case 'image/jpeg':
-            case 'video/mp4':
-                break;
-            case 'application/octet-stream':
-                $it->next();
-                continue 2;
-            default:
-                // Skipping unknown file
-                $it->next();
-                continue 2;
-        }*/
+
         $targetDir = false;
         $exactDate = true;
         $exif = @exif_read_data($fullPath);
@@ -81,7 +71,7 @@ while ($it->valid()) {
 
         }
         if (!$exactDate) {
-            if (@$conf['process_with_no_date'] AND $conf['process_with_no_date'] = 0) {
+            if (array_key_exists('process_with_no_date', $conf) AND $conf['process_with_no_date'] == 0) {
                 echo "Skipping as no date set\n";
                 $it->next();
                 continue;
@@ -91,7 +81,52 @@ while ($it->valid()) {
         }
 
         echo "Target dir: $targetDir  " . ($exactDate ? '' : '??????') . " \n";
+        $dest = $targetBase . $targetDir;
+        $newFullPath = $dest . '/' . basename($fullPath);
+        if (is_file($newFullPath)) {
+            if (filesize($newFullPath) == filesize($fullPath) AND md5_file($newFullPath) == md5_file($fullPath)) {
+                @file_put_contents($log, "{$subPath} is identical to {$newFullPath}\n", FILE_APPEND);
+                echo "Removing already existing identical file\n";
+                unlink($fullPath);
+                $it->next();
+                continue;
+            } else {
+                // Adding index to file name
+                $i = 1;
+                do {
+                    $copyPath = $newFullPath . '_' . $i++;
+                } while (!is_file($copyPath));
+                $newFullPath = $copyPath;
+                @file_put_contents($log, "{$subPath} already exists. Renamed to {$newFullPath}\n", FILE_APPEND);
+            }
+        }
+        @mkdir($dest, 0777, true);
+        if (!rename($fullPath, $newFullPath)) {
+            die($php_errormsg);
+        }
     }
+
     $it->next();
 }
 file_put_contents($log, "\n\n", FILE_APPEND);
+
+if (array_key_exists('remove_empty_folders', $conf) AND $conf['remove_empty_folders'] == 1) {
+    RemoveEmptySubFolders($conf['source']);
+}
+
+/**
+ * @param $path
+ * @param bool $root
+ * @return bool
+ */
+function RemoveEmptySubFolders($path, $root = true)
+{
+    $empty = true;
+    foreach (glob($path . DIRECTORY_SEPARATOR . '{,.}[!.,!..]*', GLOB_MARK | GLOB_BRACE) as $file) {
+        $empty &= is_dir($file) && RemoveEmptySubFolders($file);
+        if(!$empty) {
+            break;
+        }
+    }
+    return $empty AND (!$root) AND rmdir($path);
+}
