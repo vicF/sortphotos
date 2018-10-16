@@ -1,7 +1,38 @@
 <?php
 
 $conf = parse_ini_file('config.ini');
-$it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($conf['source']));
+
+$existingFiles = [];
+if ($conf['check_for_duplicates']) {
+    $checkFolders[rtrim($conf['target'], '/')] = true;
+    if (array_key_exists('targets_to_check_for_duplicates', $conf)) {
+        foreach (explode(',', $conf['targets_to_check_for_duplicates']) as $folder) {
+            $folder = trim($folder);
+            if (empty($folder)) {
+                continue;
+            } else {
+                if ($folder != '/') {
+                    rtrim($folder, '/');  // Remove ending slash for all folders except root ("/")
+                }
+                $checkFolders[$folder] = true;
+            }
+        }
+    }
+    $checkFolders = array_keys($checkFolders);
+
+    foreach ($checkFolders as $checkFolder) {
+        $targetIterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($checkFolder, FilesystemIterator::KEY_AS_PATHNAME));
+        while ($targetIterator->valid()) {
+            if (!$targetIterator->isDot()) {
+                $existingFiles[filesize($targetIterator->key())][] = $targetIterator->key();
+            }
+            $targetIterator->next();
+        }
+    }
+}
+
+
+$it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($conf['source'], FilesystemIterator::KEY_AS_PATHNAME));
 
 $targetBase = rtrim(trim($conf['target']), '/') . '/';
 
@@ -29,7 +60,35 @@ while ($it->valid()) {
             echo "Skipping by extension\n";
             continue;
         }
-        $fullPath = rtrim($conf['source'], '/') . '/' . $subPath;
+        $fullPath = mergePaths($conf['source'], $subPath);
+        if ($conf['check_for_duplicates']) {
+            $size = filesize($fullPath);
+            if($size == 0) {
+                // This is bad zero size file
+                echo "File {$fullPath} has zero length!\n";
+                @file_put_contents($log, "File \n{$fullPath} has zero length!\n", FILE_APPEND);
+                if (@$conf['remove_existing_files']) {
+                    echo("Removing zero length source file\n");
+                    unlink($fullPath);
+                }
+                $it->next();
+                continue;
+            }
+            if (array_key_exists($size, $existingFiles)) {
+                foreach ($existingFiles[$size] as $existingFile) {
+                    if (filesAreEqual($fullPath, $existingFile)) {
+                        echo "File {$fullPath} already exists as {$existingFile}\n";
+                        @file_put_contents($log, "File \n{$fullPath} already exists as \n{$existingFile}\n", FILE_APPEND);
+                        if (@$conf['remove_existing_files']) {
+                            echo("Removing source file\n");
+                            unlink($fullPath);
+                        }
+                        $it->next();
+                        continue 2;
+                    }
+                }
+            }
+        }
 
         $targetDir = false;
         $exactDate = true;
@@ -84,10 +143,12 @@ while ($it->valid()) {
         $dest = $targetBase . $targetDir;
         $newFullPath = $dest . '/' . basename($fullPath);
         if (is_file($newFullPath)) {
-            if (filesize($newFullPath) == filesize($fullPath) AND md5_file($newFullPath) == md5_file($fullPath)) {
+            if (filesAreEqual($newFullPath, $fullPath)) {
                 @file_put_contents($log, "{$subPath} is identical to {$newFullPath}\n", FILE_APPEND);
-                echo "Removing already existing identical file\n";
-                unlink($fullPath);
+                if (@$conf['remove_existing_files']) {
+                    echo "Removing already existing identical file\n";
+                    unlink($fullPath);
+                }
                 $it->next();
                 continue;
             } else {
@@ -123,10 +184,49 @@ function RemoveEmptySubFolders($path, $root = true)
 {
     $empty = true;
     foreach (glob($path . DIRECTORY_SEPARATOR . '{,.}[!.,!..]*', GLOB_MARK | GLOB_BRACE) as $file) {
-        $empty &= is_dir($file) && RemoveEmptySubFolders($file);
-        if(!$empty) {
+        $empty &= is_dir($file) && RemoveEmptySubFolders($file, false);
+        /*if (!$empty) {
+            break;
+        }*/
+    }
+    return $empty AND (!$root) AND rmdir($path);
+}
+
+/**
+ * @param $a
+ * @param $b
+ * @return bool
+ */
+function filesAreEqual($a, $b)
+{
+    // Check if filesize is different
+    if (filesize($a) !== filesize($b))
+        return false;
+
+    // Check if content is different
+    $ah = fopen($a, 'rb');
+    $bh = fopen($b, 'rb');
+
+    $result = true;
+    while (!feof($ah)) {
+        if (fread($ah, 8192) != fread($bh, 8192)) {
+            $result = false;
             break;
         }
     }
-    return $empty AND (!$root) AND rmdir($path);
+
+    fclose($ah);
+    fclose($bh);
+
+    return $result;
+}
+
+/**
+ * @param $a
+ * @param $b
+ * @return string
+ */
+function mergePaths($a, $b)
+{
+    return rtrim($a, '/') . '/' . $b;
 }

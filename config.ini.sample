@@ -2,14 +2,22 @@ source=/Volumes/photo_to_sort
 target=/Volumes/photo_sorted
 template=Y/Y-m-d
 
-# allowed extensions
+; allowed extensions
 extensions = jpg jpeg gif tiff bmp png flv ogg avi mov wmv mp4 m4p mpg mpeg mpv m4v 3gp f4v
 
-# log file
+; log file
 log = log.txt
 
-# set to 1 to copy videos and images with no exif date. File creation date will be used instead.
+; set to 1 to copy videos and images with no exif date. File creation date will be used instead.
 process_with_no_date = 0
 
-# set to remove empty folders after all photos has been moved from them
+; set to remove empty folders after all photos has been moved from them
 remove_empty_folders = 1
+
+
+; remove already existing files from source after copy.
+; When same target file already exists in the destination, remove source file as if it was copied
+remove_existing_files = 1
+
+; Check for duplicates. Scans root target folder at the start and skip files that already exist (even with different name)
+check_for_duplicates = 1
