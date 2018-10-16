@@ -5,6 +5,9 @@ template=Y/Y-m-d
 ; allowed extensions
 extensions = jpg jpeg gif tiff bmp png flv ogg avi mov wmv mp4 m4p mpg mpeg mpv m4v 3gp f4v
 
+; Files with these extensions will be deleted from source folder
+extensions_to_delete = tmp DS_Store dthumb
+
 ; log file
 log = log.txt
 

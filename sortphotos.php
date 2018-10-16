@@ -21,6 +21,7 @@ if ($conf['check_for_duplicates']) {
     $checkFolders = array_keys($checkFolders);
 
     foreach ($checkFolders as $checkFolder) {
+        echo "Scanning folder: {$checkFolder}\n";
         $targetIterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($checkFolder, FilesystemIterator::KEY_AS_PATHNAME));
         while ($targetIterator->valid()) {
             if (!$targetIterator->isDot()) {
@@ -32,38 +33,40 @@ if ($conf['check_for_duplicates']) {
 }
 
 
-$it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($conf['source'], FilesystemIterator::KEY_AS_PATHNAME));
+$sourceIterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($conf['source'], FilesystemIterator::KEY_AS_PATHNAME));
 
 $targetBase = rtrim(trim($conf['target']), '/') . '/';
 
 $log = @$conf['log'] ?: 'log.txt';
 
-$it->rewind();
+$sourceIterator->rewind();
 
-$tmpExtensions = explode(' ', $conf['extensions']);
-foreach ($tmpExtensions as $extension) {
-    $allowedExtensions[] = strtolower(trim(trim($extension, '.,')));
-}
-unset($tmpExtensions);
+$allowedExtensions = getExtensionsArray($conf['extensions']);
+$deleteExtensions = getExtensionsArray($conf['extensions_to_delete']);
 
 @file_put_contents($log, "------------------------------ " . date('Y-m-d h:m:s') . " -----------------------------\n\n", FILE_APPEND);
 
-while ($it->valid()) {
-    if (!$it->isDot()) {
-        echo $it->getSubPathName() . "\n";
+while ($sourceIterator->valid()) {
+    if (!$sourceIterator->isDot()) {
+        echo $sourceIterator->getSubPathName() . "\n";
 
 
-        $subPath = $it->getSubPathName();
+        $subPath = $sourceIterator->getSubPathName();
         $extension = substr($subPath, strrpos($subPath, '.') + 1);
         if (!in_array(strtolower($extension), $allowedExtensions)) {
-            $it->next();
-            echo "Skipping by extension\n";
+            if (in_array(strtolower($extension), $deleteExtensions)) {
+                echo "Deleting: {$subPath}\n";
+                unlink($sourceIterator->key());
+            } else {
+                echo "Skipping by extension\n";
+            }
+            $sourceIterator->next();
             continue;
         }
-        $fullPath = mergePaths($conf['source'], $subPath);
+        $fullPath = $sourceIterator->key();
         if ($conf['check_for_duplicates']) {
             $size = filesize($fullPath);
-            if($size == 0) {
+            if ($size == 0) {
                 // This is bad zero size file
                 echo "File {$fullPath} has zero length!\n";
                 @file_put_contents($log, "File \n{$fullPath} has zero length!\n", FILE_APPEND);
@@ -71,7 +74,7 @@ while ($it->valid()) {
                     echo("Removing zero length source file\n");
                     unlink($fullPath);
                 }
-                $it->next();
+                $sourceIterator->next();
                 continue;
             }
             if (array_key_exists($size, $existingFiles)) {
@@ -83,7 +86,7 @@ while ($it->valid()) {
                             echo("Removing source file\n");
                             unlink($fullPath);
                         }
-                        $it->next();
+                        $sourceIterator->next();
                         continue 2;
                     }
                 }
@@ -132,7 +135,7 @@ while ($it->valid()) {
         if (!$exactDate) {
             if (array_key_exists('process_with_no_date', $conf) AND $conf['process_with_no_date'] == 0) {
                 echo "Skipping as no date set\n";
-                $it->next();
+                $sourceIterator->next();
                 continue;
             } else {
                 @file_put_contents($log, "{$subPath} > {$targetDir}\n", FILE_APPEND);
@@ -149,7 +152,7 @@ while ($it->valid()) {
                     echo "Removing already existing identical file\n";
                     unlink($fullPath);
                 }
-                $it->next();
+                $sourceIterator->next();
                 continue;
             } else {
                 // Adding index to file name
@@ -167,7 +170,7 @@ while ($it->valid()) {
         }
     }
 
-    $it->next();
+    $sourceIterator->next();
 }
 file_put_contents($log, "\n\n", FILE_APPEND);
 
@@ -229,4 +232,18 @@ function filesAreEqual($a, $b)
 function mergePaths($a, $b)
 {
     return rtrim($a, '/') . '/' . $b;
+}
+
+/**
+ * @param $conf
+ * @return array
+ */
+function getExtensionsArray($conf)
+{
+    $tmpExtensions = explode(' ', $conf);
+    $allowedExtensions = [];
+    foreach ($tmpExtensions as $extension) {
+        $allowedExtensions[] = strtolower(trim(trim($extension, '.,')));
+    }
+    return $allowedExtensions;
 }
